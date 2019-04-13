@@ -11,17 +11,18 @@ module Context : sig
   end
   module Common : sig
     type t =
-      { loc       : Loc.t
-      ; profile   : string
-      ; targets   : Target.t list
-      ; env       : Dune_env.Stanza.t option
-      ; toolchain : string option
+      { loc          : Loc.t
+      ; profile      : string
+      ; targets      : Target.t list
+      ; env          : Dune_env.Stanza.t option
+      ; toolchain    : string option
+      ; name         : string
+      ; host_context : string option
       }
   end
   module Opam : sig
     type t =
       { base    : Common.t
-      ; name    : string
       ; switch  : string
       ; root    : string option
       ; merlin  : bool
