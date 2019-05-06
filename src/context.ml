@@ -506,11 +506,11 @@ let create ~(kind : Kind.t) ~path ~env ~env_nodes ~name ~merlin ~targets ~host_c
         set t.ocamlmklib;
       end;
     end;
-    Fiber.return (host_context, t)
+    Fiber.return t
   in
   let implicit = not (List.mem ~set:targets Workspace.Context.Target.Native) in
-  let* (nat_host, native) =
-    create_one ~host:None ~findlib_toolchain:host_toolchain
+  let* native =
+    create_one ~host:host_context ~findlib_toolchain:host_toolchain
       ~implicit ~name ~merlin
   in
   let+ others =
@@ -522,7 +522,7 @@ let create ~(kind : Kind.t) ~path ~env ~env_nodes ~name ~merlin ~targets ~host_c
           ~findlib_toolchain:(Some findlib_toolchain)
         >>| Option.some)
   in
-  (nat_host, native) :: List.filter_opt others
+  native :: List.filter_opt others
 
 let opam_config_var t var =
   opam_config_var ~env:t.env ~cache:t.opam_var_cache var
@@ -600,49 +600,118 @@ let create_for_opam ~root ~env ~env_nodes ~targets ~profile
   create ~kind:(Opam { root; switch }) ~profile ~targets ~path ~env ~env_nodes
     ~name ~merlin ~host_context ~host_toolchain
 
-let resolve_host_contexts contexts =
-  let empty = String.Map.empty in
-  let map = List.fold_left
-              ~f:(fun map (_,(_,elem)) -> String.Map.add map elem.name elem)
-              ~init:empty
-              contexts in
-  List.map ~f:(fun (loc, (host, elem)) -> match host with
-    | None -> elem
-    | Some host -> (
-      match String.Map.find map host with
-      | None -> Errors.fail loc "Undefined host context '%s' for '%s'." host elem.name
-      | Some ctx -> {elem with for_host=(Some ctx)}
-    ))
-  contexts
+let bad_configuration_check map =
+  let get_host_context = function
+    | Workspace.Context.Default { host_context; _ }
+    | Workspace.Context.Opam { base={host_context; _}; _} -> host_context
+  in
+  let get_loc = function
+    | Workspace.Context.Default { loc; _ }
+    | Workspace.Context.Opam { base={loc; _}; _} -> loc
+  in
+  let check elt = match get_host_context elt with
+    | None -> ()
+    | Some host ->
+      (let host_elt = String.Map.find_exn map host in
+       match get_host_context host_elt with
+       | None -> ()
+       | Some host_of_host ->
+         Errors.fail
+           (get_loc host_elt)
+           "Context '%s' is both a host (for '%s') and a target (for '%s')."
+           host
+           (Workspace.Context.name elt)
+           host_of_host
+      )
+  in
+  String.Map.iter
+    map
+    ~f:check
+
+let top_sort contexts =
+  let key = Workspace.Context.name
+  in
+  let map =
+    String.Map.of_list_map_exn
+      contexts
+      ~f:(fun x -> key x, x)
+  in
+  let deps def =
+    let open Workspace.Context in
+    match def with
+    | Default { host_context=(Some ctx); loc; name; _}
+    | Opam { base={host_context=(Some ctx); loc; name; _}; _} ->
+      (match String.Map.find map ctx with
+       | None ->
+         Errors.fail
+           loc
+           "Undefined host context '%s' for '%s'."
+           ctx
+           name
+       | Some host_ctx -> [host_ctx])
+    | _ -> []
+  in
+  bad_configuration_check map;
+  match Top_closure.String.top_closure ~key ~deps contexts with
+  | Ok top_contexts -> top_contexts
+  | Error _ -> assert false
 
 let create ~env (workspace : Workspace.t) =
+  let open Workspace.Context in
   let env_nodes context =
     { Env_nodes.
       context
     ; workspace = workspace.env
     }
   in
-  Fiber.parallel_map workspace.contexts ~f:(fun def ->
-    match def with
-    | Default { targets; name; host_context; profile; env = env_node ; toolchain ; loc } ->
-      let merlin =
-        workspace.merlin_context = Some (Workspace.Context.name def)
+  let contexts = top_sort workspace.contexts
+  in
+  List.fold_left
+    contexts
+    ~f:(fun acc def ->
+      acc >>= fun (ctx_map, contexts) ->
+      (match def with
+       | Default { targets; name; host_context; profile; env = env_node ;
+                   toolchain ; _ } ->
+         let merlin =
+           workspace.merlin_context = Some (Workspace.Context.name def)
+         in
+         let host_toolchain =
+           match toolchain, Env.get env "OCAMLFIND_TOOLCHAIN" with
+           | Some t, _ -> Some t
+           | None, default -> default
+         in
+         let host_context =
+           Option.map
+             host_context
+             ~f:(fun ctx -> String.Map.find_exn ctx_map ctx)
+         in
+         default ~env ~env_nodes:(env_nodes env_node) ~profile ~targets ~name
+           ~merlin ~host_context ~host_toolchain
+       | Opam { base = { targets; name; host_context; profile; env = env_node;
+                         toolchain; _ }
+              ; switch; root; merlin } ->
+         let host_context =
+           Option.map
+             host_context
+             ~f:(fun ctx -> String.Map.find_exn ctx_map ctx)
+         in
+         create_for_opam ~root ~env_nodes:(env_nodes env_node) ~env ~profile
+           ~switch ~name ~merlin ~targets ~host_context
+           ~host_toolchain:toolchain)
+      >>| fun new_contexts ->
+      let updated_map =
+        List.fold_left
+          new_contexts
+          ~f:(fun map elem -> String.Map.add map elem.name elem)
+          ~init:ctx_map
       in
-      let host_toolchain =
-        match toolchain, Env.get env "OCAMLFIND_TOOLCHAIN" with
-        | Some t, _ -> Some t
-        | None, default -> default
-      in
-      (default ~env ~env_nodes:(env_nodes env_node) ~profile ~targets ~name ~merlin
-        ~host_context ~host_toolchain
-      >>| fun x -> List.map ~f:(fun x -> (loc,x)) x)
-    | Opam { base = { targets; name; host_context; profile; env = env_node; toolchain; loc }
-           ; switch; root; merlin } ->
-      (create_for_opam ~root ~env_nodes:(env_nodes env_node) ~env ~profile
-        ~switch ~name ~merlin ~targets ~host_context ~host_toolchain:toolchain)
-      >>| fun x -> List.map ~f:(fun x -> (loc,x)) x)
-  >>| List.concat
-  >>| resolve_host_contexts
+      (updated_map, new_contexts @ contexts)
+    )
+    ~init:(Fiber.return (String.Map.empty, []))
+  >>| fun (_, contexts) -> contexts
+
+
 
 let which t s = which ~cache:t.which_cache ~path:t.path s
 

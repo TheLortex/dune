@@ -43,6 +43,10 @@ unreleased
 - Install the `future_syntax` preprocessor as `ocaml-syntax-shims.exe` (#2125,
   @rgrinberg)
 
+- In `dune-workspace` files, add the ability to choose the host context and to
+  create duplicates of the default context with different settings. (#2098, 
+  @TheLortex, review by @diml and @aalekseyev)
+
 1.9.2 (02/05/2019)
 ------------------
 
