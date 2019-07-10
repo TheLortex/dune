@@ -91,7 +91,6 @@ type 'path t =
   ; virtual_         : Modules.t Source.t option
   ; implements       : (Loc.t * Lib_name.t) option
   ; variant          : Variant.t option
-  ; known_implementations : (Loc.t * Lib_name.t) Variant.Map.t
   ; default_implementation  : (Loc.t * Lib_name.t) option
   ; wrapped          : Wrapped.t Dune_file.Library.Inherited.t option
   ; main_module_name : Dune_file.Library.Main_module_name.t
@@ -117,7 +116,6 @@ let enabled t = t.enabled
 let status t = t.status
 let kind t = t.kind
 let default_implementation t = t.default_implementation
-let known_implementations t = t.known_implementations
 let obj_dir t = t.obj_dir
 let virtual_ t = t.virtual_
 let implements t = t.implements
@@ -138,7 +136,7 @@ let user_written_deps t =
 let of_library_stanza ~dir
       ~lib_config:({ Lib_config.has_native; ext_lib; ext_obj; _ }
                    as lib_config)
-      ~known_implementations (conf : Dune_file.Library.t) =
+      (conf : Dune_file.Library.t) =
   let (_loc, lib_name) = conf.name in
   let obj_dir = Dune_file.Library.obj_dir ~dir conf in
   let gen_archive_file ~dir ext =
@@ -252,7 +250,6 @@ let of_library_stanza ~dir
   ; virtual_
   ; implements = conf.implements
   ; variant = conf.variant
-  ; known_implementations
   ; default_implementation = conf.default_implementation
   ; main_module_name
   ; modes
@@ -301,7 +298,6 @@ let of_dune_lib dp =
   ; virtual_
   ; implements = Lib.implements dp
   ; variant = None
-  ; known_implementations = Lib.known_implementations dp
   ; default_implementation = Lib.default_implementation dp
   ; modes = Lib.modes dp
   ; wrapped

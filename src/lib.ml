@@ -1540,35 +1540,8 @@ module DB = struct
     in
     let map =
       List.concat_map lib_stanzas ~f:(fun (dir, (conf : Dune_file.Library.t)) ->
-        (* In the [implements] field of library stanzas, the user
-           might use either public or private library names. As a
-           result, we have to lookup for implementations via both the
-           public and private names. *)
-        let variants_private =
-          Lib_name.Map.find variant_map (Lib_name.of_local conf.name)
-          |> Option.value ~default:[]
-        in
-        let variants =
-          match conf.public with
-          | None -> variants_private
-          | Some { name = (_loc, name); _ } ->
-            if Lib_name.equal name (Lib_name.of_local conf.name) then
-              variants_private
-            else
-              match Lib_name.Map.find variant_map name with
-              | None -> variants_private
-              | Some variants_public ->
-                List.rev_append variants_private variants_public
-        in
-        let known_implementations =
-          match Variant.Map.of_list variants with
-          | Ok x -> x
-          | Error (variant, x, y) ->
-            error_two_impl_for_variant (snd conf.name) variant x y
-        in
         let info =
-          Lib_info.of_library_stanza ~dir ~lib_config
-            ~known_implementations conf
+          Lib_info.of_library_stanza ~dir ~lib_config conf
           |> Lib_info.of_local
         in
         match conf.public with
@@ -1784,7 +1757,6 @@ let to_dune_lib ({ name ; info ; _ } as lib) ~modules ~foreign_objects
   let jsoo_runtime = Lib_info.jsoo_runtime info in
   let special_builtin_support = Lib_info.special_builtin_support info in
   let default_implementation = Lib_info.default_implementation info in
-  let known_implementations = Lib_info.known_implementations info in
   let foreign_archives = Lib_info.foreign_archives info in
   Dune_package.Lib.make
     ~obj_dir
@@ -1803,7 +1775,6 @@ let to_dune_lib ({ name ; info ; _ } as lib) ~modules ~foreign_objects
     ~ppx_runtime_deps:(add_loc (ppx_runtime_deps_exn lib))
     ~modes
     ~implements
-    ~known_implementations
     ~default_implementation
     ~virtual_
     ~modules:(Some modules)

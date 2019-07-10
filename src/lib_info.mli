@@ -68,7 +68,6 @@ val wrapped : _ t -> Wrapped.t Dune_file.Library.Inherited.t option
 val special_builtin_support : _ t -> Dune_file.Library.Special_builtin_support.t option
 val modes : _ t -> Mode.Dict.Set.t
 val implements : _ t -> (Loc.t * Lib_name.t) option
-val known_implementations : _ t -> (Loc.t * Lib_name.t) Variant.Map.t
 val requires : _ t -> Deps.t
 val ppx_runtime_deps : _ t -> (Loc.t * Lib_name.t) list
 val pps : _ t -> (Loc.t * Lib_name.t) list
@@ -87,7 +86,6 @@ type local = Path.Build.t t
 val of_library_stanza
   :  dir:Path.Build.t
   -> lib_config:Lib_config.t
-  -> known_implementations:(Loc.t * Lib_name.t) Variant.Map.t
   -> Dune_file.Library.t
   -> local
 

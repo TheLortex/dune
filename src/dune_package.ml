@@ -21,7 +21,6 @@ module Lib = struct
     ; ppx_runtime_deps : (Loc.t * Lib_name.t) list
     ; sub_systems      : 'sub_system Sub_system_name.Map.t
     ; virtual_         : bool
-    ; known_implementations :  (Loc.t * Lib_name.t) Variant.Map.t
     ; default_implementation  : (Loc.t * Lib_name.t)  option
     ; implements       : (Loc.t * Lib_name.t) option
     ; modules          : Modules.t option
@@ -36,7 +35,7 @@ module Lib = struct
   let make ~loc ~kind ~name ~synopsis ~archives ~plugins ~foreign_objects
         ~foreign_archives ~jsoo_runtime ~main_module_name ~sub_systems
         ~requires ~ppx_runtime_deps ~implements
-        ~default_implementation ~virtual_ ~known_implementations ~modules ~modes
+        ~default_implementation ~virtual_ ~modules ~modes
         ~version ~orig_src_dir ~obj_dir
         ~special_builtin_support =
     let dir = Obj_dir.dir obj_dir in
@@ -65,7 +64,6 @@ module Lib = struct
     ; version
     ; orig_src_dir
     ; virtual_
-    ; known_implementations
     ; default_implementation
     ; modules
     ; modes
@@ -87,7 +85,7 @@ module Lib = struct
   let encode ~package_root
         { loc = _ ; kind ; synopsis ; name ; archives ; plugins
         ; foreign_objects ; foreign_archives ; jsoo_runtime ; requires
-        ; ppx_runtime_deps ; sub_systems ; virtual_ ; known_implementations
+        ; ppx_runtime_deps ; sub_systems ; virtual_
         ; implements ; default_implementation
         ; main_module_name ; version = _; obj_dir ; orig_src_dir
         ; modules ; modes ; special_builtin_support
@@ -98,7 +96,6 @@ module Lib = struct
     let paths name f = field_l name path f in
     let mode_paths name (xs : Path.t Mode.Dict.List.t) =
       field_l name sexp (Mode.Dict.List.encode path xs) in
-    let known_implementations = Variant.Map.to_list known_implementations in
     let libs name = field_l name (no_loc Lib_name.encode) in
     record_fields @@
     [ field "name" Lib_name.encode name
@@ -114,8 +111,6 @@ module Lib = struct
     ; libs "requires" requires
     ; libs "ppx_runtime_deps" ppx_runtime_deps
     ; field_o "implements" (no_loc Lib_name.encode) implements
-    ; field_l "known_implementations"
-        (pair Variant.encode (no_loc Lib_name.encode)) known_implementations
     ; field_o "default_implementation"
         (no_loc Lib_name.encode) default_implementation
     ; field_o "main_module_name" Module.Name.encode main_module_name
@@ -162,9 +157,6 @@ module Lib = struct
       and+ requires = libs "requires"
       and+ ppx_runtime_deps = libs "ppx_runtime_deps"
       and+ virtual_ = field_b "virtual"
-      and+ known_implementations = field_l "known_implementations"
-                                     (pair Variant.decode
-                                             (located Lib_name.decode))
       and+ sub_systems = Sub_system_info.record_parser ()
       and+ orig_src_dir = field_o "orig_src_dir" path
       and+ modules =
@@ -177,8 +169,6 @@ module Lib = struct
           (Syntax.since Stanza.syntax (1, 10) >>>
            Dune_file.Library.Special_builtin_support.decode)
       in
-      let known_implementations =
-        Variant.Map.of_list_exn known_implementations in
       let modes = Mode.Dict.Set.of_list modes in
       { kind
       ; name
@@ -193,7 +183,6 @@ module Lib = struct
       ; ppx_runtime_deps
       ; implements
       ; default_implementation
-      ; known_implementations
       ; sub_systems
       ; main_module_name
       ; virtual_
@@ -223,7 +212,6 @@ module Lib = struct
   let foreign_archives t = t.foreign_archives
   let requires t = t.requires
   let implements t = t.implements
-  let known_implementations t = t.known_implementations
   let default_implementation t = t.default_implementation
   let modes t = t.modes
   let special_builtin_support t = t.special_builtin_support
@@ -232,11 +220,42 @@ module Lib = struct
   let wrapped t = Option.map t.modules ~f:Modules.wrapped
 end
 
+module Known_implementations = struct
+  type t = (Loc.t * Lib_name.t) Variant.Map.t Lib_name.Map.t
+
+  let encode t =
+    let open Dune_lang.Encoder in
+    let no_loc f (_loc, x) = f x in
+    let known_impls =
+      Lib_name.Map.map t ~f:(Variant.Map.to_list)
+      |> Lib_name.Map.to_list
+      |> List.map
+          ~f:(fun (vlib, t) ->
+            List.map t ~f:(fun (variant, impl) -> vlib, variant, impl))
+      |> List.flatten
+    in
+    list
+      (triple Lib_name.encode Variant.encode (no_loc Lib_name.encode))
+      known_impls
+
+  let decode =
+    let open Dune_lang.Decoder in
+    let+ known_impls =
+      list (triple Lib_name.decode Variant.decode (located Lib_name.decode))
+    in
+    known_impls
+    |> List.map ~f:(fun (a,b,c) -> a,(b,c))
+    |> Lib_name.Map.of_list_fold ~f:(List.cons) ~init:([])
+    |> Lib_name.Map.map ~f:(Variant.Map.of_list_exn)
+
+end
+
 type 'sub_system t =
-  { libs     : 'sub_system Lib.t list
-  ; name     : Package.Name.t
-  ; version  : string option
-  ; dir      : Path.t
+  { libs                  : 'sub_system Lib.t list
+  ; name                  : Package.Name.t
+  ; version               : string option
+  ; dir                   : Path.t
+  ; known_implementations : Known_implementations.t
   }
 
 let decode ~lang ~dir =
@@ -244,11 +263,13 @@ let decode ~lang ~dir =
   let+ name = field "name" Package.Name.decode
   and+ version = field_o "version" string
   and+ libs = multi_field "library" (Lib.decode ~lang ~base:dir)
+  and+ known_implementations = field "known_implementations" Known_implementations.decode
   in
   { name
   ; version
   ; libs = List.map libs ~f:(fun (lib : _ Lib.t) -> { lib with version })
   ; dir
+  ; known_implementations
   }
 
 let () = Vfile.Lang.register Stanza.syntax ()
@@ -263,7 +284,7 @@ let prepend_version ~dune_version sexps =
   ]
   @ sexps
 
-let encode ~dune_version { libs ; name ; version; dir } =
+let encode ~dune_version { libs ; name ; version; dir; known_implementations } =
   let list s = Dune_lang.List s in
   let sexp =
     [list [ Dune_lang.atom "name"; Package.Name.encode name ]] in
@@ -280,7 +301,9 @@ let encode ~dune_version { libs ; name ; version; dir } =
     List.map libs ~f:(fun lib ->
       list (Dune_lang.atom "library" :: Lib.encode lib ~package_root:dir))
   in
-  prepend_version ~dune_version (sexp @ libs)
+  let known_implementations = list [Dune_lang.atom "known_implementations"; Known_implementations.encode known_implementations]
+  in
+  prepend_version ~dune_version (known_implementations :: sexp @ libs)
 
 module Or_meta = struct
   type nonrec 'sub_system t =
