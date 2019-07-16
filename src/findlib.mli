@@ -34,14 +34,14 @@ end
 val find
   : t
   -> Lib_name.t
-  -> ( Sub_system_info.t Dune_package.Lib.t
+  -> ( Sub_system_info.t Dune_package.Lib.t * Dune_package.Info.t option
      , Unavailable_reason.t
      ) result
 
 val available : t -> Lib_name.t -> bool
 
 (** List all the packages available in this Database *)
-val all_packages  : t -> Sub_system_info.t Dune_package.Lib.t list
+val all_packages  : t -> (Sub_system_info.t Dune_package.Lib.t * Dune_package.Info.t option) list
 
 (** List all the packages that are not available in this database *)
 val all_unavailable_packages : t -> (Lib_name.t * Unavailable_reason.t) list

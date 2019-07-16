@@ -33,9 +33,9 @@ let term =
     end else begin
       let pkgs = Findlib.all_packages findlib in
       let max_len =
-        String.longest_map pkgs ~f:(fun (n : _ Dune_package.Lib.t) ->
+        String.longest_map pkgs ~f:(fun ((n : _ Dune_package.Lib.t), _) ->
           Lib_name.to_string (Dune_package.Lib.name n)) in
-      List.iter pkgs ~f:(fun (pkg : _ Dune_package.Lib.t) ->
+      List.iter pkgs ~f:(fun ((pkg : _ Dune_package.Lib.t), _) ->
         let ver =
           match Dune_package.Lib.version pkg with
           | Some v -> v

@@ -14,6 +14,8 @@ val name : t -> Lib_name.t
 
 val implements : t -> t Or_exn.t option
 
+val known_implementations : t -> (Loc.t * Lib_name.t) Variant.Map.t option
+
 (** Directory where the object files for the library are located. *)
 val obj_dir : t -> Path.t Obj_dir.t
 
@@ -142,8 +144,8 @@ module DB : sig
   module Resolve_result : sig
     type nonrec t =
       | Not_found
-      | Found    of Lib_info.external_
-      | Hidden   of Lib_info.external_ * string
+      | Found    of Lib_info.external_ * Dune_package.Info.t option
+      | Hidden   of Lib_info.external_ * Dune_package.Info.t option * string
       | Redirect of t option * Lib_name.t
   end
 

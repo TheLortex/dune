@@ -163,7 +163,7 @@ type t =
   ; paths      : Path.t list
   ; builtins   : Meta.Simplified.t Lib_name.Map.t
   ; packages   : ( Lib_name.t
-                 , ( Sub_system_info.t Dune_package.Lib.t
+                 , ( Sub_system_info.t Dune_package.Lib.t * Dune_package.Info.t option
                    , Unavailable_reason.t) result
                  ) Hashtbl.t
   }
@@ -368,7 +368,7 @@ end = struct
   let parse_package t ~meta_file ~name ~parent_dir ~vars =
     match Package.parse t ~meta_file ~name ~parent_dir ~vars with
     | Ok pkg ->
-      (pkg.dir, Ok (Package.to_dune pkg))
+      (pkg.dir, Ok (Package.to_dune pkg, None))
     | Error pkg ->
       (pkg.dir, Error (Unavailable_reason.Hidden (Package.to_dune pkg)))
 
@@ -430,7 +430,7 @@ let find_and_acknowledge_package t ~fq_name =
     Meta_source.parse_and_acknowledge findlib_package t
   | Some (Dune pkg) ->
     List.iter pkg.libs ~f:(fun lib ->
-      Hashtbl.set t.packages (Dune_package.Lib.name lib) (Ok lib))
+      Hashtbl.set t.packages (Dune_package.Lib.name lib) (Ok (lib, Some pkg.info)))
 
 let find t name =
   match Hashtbl.find t.packages name with
@@ -479,7 +479,7 @@ let all_packages t =
     match x with
     | Ok p    -> p :: acc
     | Error _ -> acc)
-  |> List.sort ~compare:Dune_package.Lib.compare_name
+  |> List.sort ~compare:(fun (a, _) (b, _) -> Dune_package.Lib.compare_name a b)
 
 let create ~stdlib_dir ~paths ~version =
   { stdlib_dir

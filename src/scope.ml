@@ -111,8 +111,7 @@ module DB = struct
       ~f:(fun _dir project l_v ->
         let project = Option.value_exn project in
         let libs, variants = Option.value l_v ~default:([], []) in
-        let db = Lib.DB.create_from_library_stanzas libs variants
-                   ~parent:public_libs ~lib_config in
+        let db = Lib.DB.create_from_library_stanzas libs variants ~parent:public_libs ~lib_config in
         let root =
           Path.Build.append_source build_context_dir
             (Dune_project.root project) in

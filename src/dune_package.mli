@@ -65,16 +65,23 @@ module Lib : sig
 end
 
 module Known_implementations : sig
+  type t = (Loc.t * Lib_name.t) Variant.Map.t Lib_name.Map.t
+end
+
+module Info : sig
   type t
 
+  val make : known_implementations : Known_implementations.t -> t
+
+  val known_implementations : t -> Known_implementations.t
 end
 
 type 'sub_system t =
-  { libs                  : 'sub_system Lib.t list
-  ; name                  : Package.Name.t
-  ; version               : string option
-  ; dir                   : Path.t
-  ; known_implementations : Known_implementations.t
+  { libs     : 'sub_system Lib.t list
+  ; name     : Package.Name.t
+  ; version  : string option
+  ; dir      : Path.t
+  ; info     : Info.t
   }
 
 module Or_meta : sig

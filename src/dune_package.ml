@@ -250,12 +250,20 @@ module Known_implementations = struct
 
 end
 
+module Info = struct
+  type t = { known_implementations : Known_implementations.t}
+
+  let make ~known_implementations = {known_implementations}
+
+  let known_implementations t = t.known_implementations
+end
+
 type 'sub_system t =
   { libs                  : 'sub_system Lib.t list
   ; name                  : Package.Name.t
   ; version               : string option
   ; dir                   : Path.t
-  ; known_implementations : Known_implementations.t
+  ; info                  : Info.t
   }
 
 let decode ~lang ~dir =
@@ -263,13 +271,13 @@ let decode ~lang ~dir =
   let+ name = field "name" Package.Name.decode
   and+ version = field_o "version" string
   and+ libs = multi_field "library" (Lib.decode ~lang ~base:dir)
-  and+ known_implementations = field "known_implementations" Known_implementations.decode
+  and+ known_implementations = field "known_implementations" ~default:Lib_name.Map.empty Known_implementations.decode
   in
   { name
   ; version
   ; libs = List.map libs ~f:(fun (lib : _ Lib.t) -> { lib with version })
   ; dir
-  ; known_implementations
+  ; info = Info.make ~known_implementations
   }
 
 let () = Vfile.Lang.register Stanza.syntax ()
@@ -284,7 +292,7 @@ let prepend_version ~dune_version sexps =
   ]
   @ sexps
 
-let encode ~dune_version { libs ; name ; version; dir; known_implementations } =
+let encode ~dune_version { libs ; name ; version; dir; info = {known_implementations} } =
   let list s = Dune_lang.List s in
   let sexp =
     [list [ Dune_lang.atom "name"; Package.Name.encode name ]] in
@@ -297,13 +305,16 @@ let encode ~dune_version { libs ; name ; version; dir; known_implementations } =
                     ]
              ]
   in
+  let sexp =
+    if Lib_name.Map.is_empty known_implementations
+    then sexp
+    else ( list [Dune_lang.atom "known_implementations"; Known_implementations.encode known_implementations]) :: sexp
+  in
   let libs =
     List.map libs ~f:(fun lib ->
       list (Dune_lang.atom "library" :: Lib.encode lib ~package_root:dir))
   in
-  let known_implementations = list [Dune_lang.atom "known_implementations"; Known_implementations.encode known_implementations]
-  in
-  prepend_version ~dune_version (known_implementations :: sexp @ libs)
+  prepend_version ~dune_version (sexp @ libs)
 
 module Or_meta = struct
   type nonrec 'sub_system t =

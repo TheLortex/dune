@@ -46,12 +46,24 @@ let gen_dune_package sctx ~version ~(pkg : Local_package.t) =
               Lib.to_dune_lib lib ~dir:(Path.build (lib_root lib)) ~modules
                 ~foreign_objects)
           in
+          let known_implementations =
+            Local_package.libs pkg
+            |> Lib.Local.Set.to_list
+            |> List.filter_map ~f:(fun lib ->
+              let lib = Lib.Local.to_lib lib in
+              Option.map
+                (Lib.known_implementations lib)
+                ~f:(fun known_impl -> (Lib.name lib, known_impl))
+              )
+            |> Lib_name.Map.of_list_exn
+          in
           Dune_package.Or_meta.Dune_package
             { Dune_package.
               version
             ; name
             ; libs
             ; dir = Path.build pkg_root
+            ; info = Dune_package.Info.make ~known_implementations
             }
         in
         dune_package))
